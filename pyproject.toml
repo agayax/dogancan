@@ -20,6 +20,7 @@ python-telegram-bot = "^21.4"
 ccxt = "^4.3.45"
 optuna = "^3.6.1"
 click = "^8.1.7"
+openai = "^1.35.3"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
