@@ -11,6 +11,8 @@ sys.path.append(str(Path(__file__).resolve().parents[2]))
 
 from app.data.fetcher import BinanceFetcher
 from app.data.storage import DataStorage
+from app.data.sentiment_fetcher import SentimentFetcher
+from app.data.onchain_fetcher import OnChainFetcher
 from app.strategy.ema_atr import EmaAtrStrategy
 from app.backtest.engine import BacktestEngine
 from app.optimize.optimizer import Optimizer
@@ -25,30 +27,36 @@ def cli():
     pass
 
 @cli.command()
-@click.option('--symbol', default='BTCUSDT', help='Trading symbol (e.g., BTCUSDT).')
-@click.option('--interval', default='1h', help='Candlestick interval (e.g., 1h, 4h, 1d).')
-@click.option('--days', default=365, help='Number of days of data to fetch.')
+@click.option('--symbol', default='BTCUSDT', help='Trading symbol.')
+@click.option('--interval', default='1h', help='Candlestick interval.')
+@click.option('--days', default=365, help='Number of days to fetch.')
 def update_data(symbol, interval, days):
-    """Fetches historical OHLCV data and saves it to Parquet."""
-    click.echo(f"Fetching last {days} days of data for {symbol} on {interval} interval...")
+    """Fetches historical OHLCV data."""
+    click.echo(f"Fetching data for {symbol}...")
     fetcher = BinanceFetcher()
     storage = DataStorage()
-
     end_date = datetime.utcnow()
     start_date = end_date - timedelta(days=days)
-
-    df = fetcher.get_klines(
-        symbol,
-        interval,
-        start_str=start_date.strftime('%Y-%m-%d'),
-        end_str=end_date.strftime('%Y-%m-%d')
-    )
-
+    df = fetcher.get_klines(symbol, interval, start_str=start_date.strftime('%Y-%m-%d'), end_str=end_date.strftime('%Y-%m-%d'))
     if not df.empty:
         storage.save_ohlcv(df, symbol, interval)
-        click.echo(f"Successfully downloaded and saved {len(df)} records.")
-    else:
-        click.echo("Failed to download data.")
+        click.echo(f"Saved {len(df)} records.")
+
+@cli.command()
+def update_sentiment():
+    """Fetches news and updates the sentiment data feed."""
+    click.echo("Updating sentiment data...")
+    fetcher = SentimentFetcher()
+    fetcher.fetch_and_analyze()
+    click.echo("Sentiment data updated.")
+
+@cli.command()
+def update_onchain():
+    """Generates and saves synthetic on-chain data."""
+    click.echo("Updating on-chain data...")
+    fetcher = OnChainFetcher()
+    fetcher.generate_and_save_data()
+    click.echo("On-chain data updated.")
 
 @cli.command()
 @click.option('--symbol', default='BTCUSDT', help='Symbol to backtest.')
@@ -56,39 +64,29 @@ def update_data(symbol, interval, days):
 @click.option('--fast-ema', default=12, help='Fast EMA period.')
 @click.option('--slow-ema', default=26, help='Slow EMA period.')
 def run_backtest(symbol, interval, fast_ema, slow_ema):
-    """Runs a backtest with the given parameters and generates a report."""
-    click.echo(f"Running backtest for {symbol}/{interval} with EMA params: {fast_ema}/{slow_ema}")
+    """Runs a single-asset backtest."""
     storage = DataStorage()
     df = storage.read_ohlcv(symbol, interval)
-
     if df.empty:
-        click.echo("No data found. Run 'update-data' first.", err=True)
+        click.echo("No data found.", err=True)
         return
-
     strategy = EmaAtrStrategy(fast_ema_period=fast_ema, slow_ema_period=slow_ema)
     engine = BacktestEngine(df, strategy)
     engine.run()
-
-    report_name = f"backtest_{symbol}_{interval}_ema_{fast_ema}_{slow_ema}.csv"
+    report_name = f"backtest_{symbol}_{interval}.txt"
     engine.generate_report(report_filename=report_name)
-    click.echo(f"Backtest complete. Report saved to reports/{report_name}")
+    click.echo(f"Backtest complete. Report: reports/{report_name}")
 
 @cli.command()
 @click.option('--symbol', default='BTCUSDT', help='Symbol to optimize.')
 @click.option('--interval', default='1h', help='Interval to optimize.')
-@click.option('--trials', default=100, help='Number of optimization trials.')
+@click.option('--trials', default=50, help='Number of optimization trials.')
 def run_optimization(symbol, interval, trials):
-    """Runs hyperparameter optimization for the strategy."""
-    click.echo(f"Starting optimization for {symbol}/{interval} with {trials} trials...")
+    """Runs hyperparameter optimization."""
     try:
-        optimizer = Optimizer(
-            symbol=symbol,
-            interval=interval,
-            start_date="2023-01-01",
-            end_date="2023-12-31"
-        )
+        optimizer = Optimizer(symbol, interval, "2023-01-01", "2023-12-31")
         optimizer.run_optimization(n_trials=trials)
-        click.echo("Optimization complete. Report saved in 'reports/' directory.")
+        click.echo("Optimization complete.")
     except ValueError as e:
         click.echo(f"Error: {e}", err=True)
 
@@ -96,59 +94,39 @@ def run_optimization(symbol, interval, trials):
 def start_live():
     """Starts the live trading bot as a background process."""
     if PID_FILE.exists():
-        click.echo("Live bot is already running. Check the PID file.", err=True)
+        click.echo("Bot is already running.", err=True)
         return
-
     script_path = Path(__file__).resolve().parents[2] / "run_live_trader.py"
     process = subprocess.Popen([sys.executable, str(script_path)])
-
-    with open(PID_FILE, 'w') as f:
-        f.write(str(process.pid))
-
-    click.echo(f"Live trading bot started with PID: {process.pid}")
+    with open(PID_FILE, 'w') as f: f.write(str(process.pid))
+    click.echo(f"Live bot started with PID: {process.pid}")
 
 @cli.command()
 def stop_live():
     """Stops the live trading bot."""
     if not PID_FILE.exists():
-        click.echo("Live bot is not running (no PID file found).", err=True)
+        click.echo("Bot not running.", err=True)
         return
-
-    with open(PID_FILE, 'r') as f:
-        pid = int(f.read().strip())
-
+    with open(PID_FILE, 'r') as f: pid = int(f.read().strip())
     try:
-        os.kill(pid, 15) # 15 = SIGTERM, graceful shutdown
-        click.echo(f"Sent stop signal to process {pid}.")
+        os.kill(pid, 15)
+        click.echo(f"Stop signal sent to PID {pid}.")
     except ProcessLookupError:
-        click.echo(f"Process {pid} not found. It might have already stopped.", err=True)
-
+        click.echo(f"Process {pid} not found.", err=True)
     os.remove(PID_FILE)
 
 @cli.command()
 def daily_summary():
-    """Fetches the current portfolio balance and sends a summary via Telegram."""
-    click.echo("Sending daily portfolio summary...")
+    """Sends a daily portfolio summary."""
+    click.echo("Sending daily summary...")
     try:
-        broker = LiveBroker(symbol='BTC/USDT') # Symbol needed for market data
-        usdt_balance = broker.get_balance('USDT')
-        btc_balance = broker.get_balance('BTC')
-
-        ticker = broker.exchange.fetch_ticker('BTC/USDT')
-        btc_value_in_usdt = btc_balance * ticker['last']
-        total_value = usdt_balance + btc_value_in_usdt
-
-        message = (
-            f"*📈 Daily Portfolio Summary*\n\n"
-            f"*Total Value:* ${total_value:,.2f} USD\n"
-            f"*USDT Balance:* {usdt_balance:,.2f}\n"
-            f"*BTC Balance:* {btc_balance:.6f} (${btc_value_in_usdt:,.2f})"
-        )
-
+        broker = LiveBroker(symbol='BTC/USDT') # Dummy symbol for init
+        balance = broker.get_portfolio_balance()
+        total_usdt = balance['total']['USDT']
+        message = f"*📈 Daily Portfolio Summary*\n\n*Total Value:* ${total_usdt:,.2f} USD"
         notifier = Notifier()
         asyncio.run(notifier.send_message(message))
-        click.echo("Summary sent successfully.")
-
+        click.echo("Summary sent.")
     except Exception as e:
         click.echo(f"Failed to send summary: {e}", err=True)
 

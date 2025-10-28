@@ -1,5 +1,6 @@
 import uvicorn
 import os
+import sys
 
 def main():
     """

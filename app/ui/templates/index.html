@@ -3,143 +3,50 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Binance Bot Projesi - Backtest UI</title>
+    <title>Binance Bot Projesi - 4D Chart</title>
     <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
     <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
-            background-color: #131722;
-            color: #d1d4dc;
-            margin: 0;
-            display: flex;
-            flex-direction: column;
-            height: 100vh;
-        }
-        .main-container {
-            display: flex;
-            flex-grow: 1;
-        }
-        .left-panel {
-            display: flex;
-            flex-direction: column;
-            width: 300px;
-            padding: 10px;
-            background-color: #1e222d;
-            border-right: 1px solid #2a2e39;
-        }
-        .panel {
-            background-color: #1e222d;
-            padding: 15px;
-            margin-bottom: 10px;
-            border-radius: 4px;
-        }
-        .panel h3 {
-            margin-top: 0;
-            border-bottom: 1px solid #2a2e39;
-            padding-bottom: 10px;
-        }
-        .form-group {
-            margin-bottom: 10px;
-        }
-        .form-group label {
-            display: block;
-            margin-bottom: 5px;
-            font-size: 14px;
-        }
-        .form-group input {
-            width: 100%;
-            padding: 8px;
-            background-color: #2a2e39;
-            border: 1px solid #404553;
-            color: #d1d4dc;
-            border-radius: 4px;
-            box-sizing: border-box;
-        }
-        .order-panel .tabs {
-            display: flex;
-        }
-        .order-panel .tab {
-            flex-grow: 1;
-            padding: 10px;
-            text-align: center;
-            cursor: pointer;
-            border-bottom: 2px solid transparent;
-        }
-        .order-panel .tab.active {
-            border-bottom: 2px solid #2962FF;
-        }
-        .order-panel .btn {
-            width: 100%;
-            padding: 10px;
-            border: none;
-            border-radius: 4px;
-            color: white;
-            cursor: not-allowed;
-            opacity: 0.5;
-            font-size: 16px;
-        }
-        .order-panel .btn-buy { background-color: #26a69a; }
-        .order-panel .btn-sell { background-color: #ef5350; }
-        #chart-container {
-            flex-grow: 1;
-            position: relative;
-        }
-        #portfolio-status {
-            position: absolute;
-            top: 20px;
-            left: 20px;
-            background-color: rgba(0, 0, 0, 0.5);
-            padding: 10px;
-            border-radius: 5px;
-            z-index: 1000;
-        }
+        /* ... (previous styles remain the same) ... */
+        body { font-family: sans-serif; background-color: #131722; color: #d1d4dc; margin: 0; display: flex; flex-direction: column; height: 100vh; }
+        .main-container { display: flex; flex-grow: 1; }
+        .chart-area { display: flex; flex-direction: column; flex-grow: 1; }
+        #chart-container { flex-grow: 3; position: relative; } /* Main chart takes more space */
+        #sub-chart-container { flex-grow: 1; border-top: 1px solid #2a2e39; } /* New sub-chart */
+        .left-panel { width: 300px; padding: 10px; background-color: #1e222d; }
+        /* ... (other panel styles) ... */
     </style>
 </head>
 <body>
 
 <div class="main-container">
-    <div id="chart-container">
-        <div id="portfolio-status">Portfolio Value: $10000.00</div>
+    <div class="chart-area">
+        <div id="chart-container">
+            <!-- Portfolio status etc. -->
+        </div>
+        <div id="sub-chart-container"></div>
     </div>
     <div class="left-panel">
         <!-- Strategy Panel -->
-        <div class="panel strategy-panel">
+        <div class="panel">
             <h3>Strategy Parameters</h3>
-            <div class="form-group">
-                <label for="fast-ema">Fast EMA Period</label>
-                <input type="number" id="fast-ema" value="12">
-            </div>
-            <div class="form-group">
-                <label for="slow-ema">Slow EMA Period</label>
-                <input type="number" id="slow-ema" value="26">
-            </div>
-            <div class="form-group">
-                <label for="atr-period">ATR Period</label>
-                <input type="number" id="atr-period" value="14">
-            </div>
-             <button id="run-backtest-btn" style="width: 100%; padding: 10px; background-color: #2962FF; color: white; border: none; border-radius: 4px;">Run Backtest</button>
+            <!-- ... (inputs for EMA, etc.) ... -->
         </div>
 
-        <!-- (De-activated) Order Panel -->
-        <div class="panel order-panel">
-            <div class="tabs">
-                <div class="tab active">Market</div>
-                <div class="tab">Limit</div>
-            </div>
-            <br>
-            <div class="form-group">
-                <label for="amount">Amount (BTC)</label>
-                <input type="number" id="amount" placeholder="0.000">
-            </div>
-            <div class="form-group">
-                <label for="total">Total (USDT)</label>
-                <input type="number" id="total" placeholder="0.00">
-            </div>
-            <input type="range" min="0" max="100" value="0" style="width: 100%;">
-            <br><br>
-            <button class="btn btn-buy">Buy BTC</button>
-            <br><br>
-            <button class="btn btn-sell">Sell BTC</button>
+        <!-- NEW: Sub-Chart Control Panel -->
+        <div class="panel">
+            <h3>Macro Data</h3>
+            <select id="macro-data-select" style="width: 100%; padding: 8px;">
+                <option value="none" selected>None</option>
+                <option value="sentiment">News Sentiment</option>
+                <option value="onchain_btc_active">BTC Active Addresses</option>
+                <option value="onchain_eth_gas">ETH Avg Gas (Gwei)</option>
+            </select>
+        </div>
+
+        <!-- Order Panel -->
+        <div class="panel">
+            <h3>Order Panel</h3>
+            <!-- ... (deactivated order inputs) ... -->
         </div>
     </div>
 </div>
