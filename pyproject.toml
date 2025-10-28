@@ -1,0 +1,14 @@
+[tool.poetry]
+name = "binance-bot-projesi"
+version = "0.1.0"
+description = "Binance Trading Bot Project"
+authors = ["Jules"]
+
+[tool.poetry.dependencies]
+python = "^3.9"
+python-binance = "^1.0.19"
+python-dotenv = "^1.0.1"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
