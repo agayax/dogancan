@@ -1,0 +1,5 @@
+INFO:     Will watch for changes in these directories: ['/app']
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [11053] using StatReload
+Starting Uvicorn server...
+Access the UI at http://127.0.0.1:8000
