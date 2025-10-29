@@ -23,6 +23,8 @@ click = "^8.1.7"
 openai = "^1.35.3"
 scikit-learn = "^1.5.0"
 feedparser = "^6.0.11"
+xgboost = "^2.1.0"
+scipy = "^1.14.0"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

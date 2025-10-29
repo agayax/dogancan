@@ -3,19 +3,19 @@ import os
 import sys
 import subprocess
 import asyncio
+import pandas as pd
 from datetime import datetime, timedelta
 from pathlib import Path
 
-# Ensure the app directory is in the Python path
 sys.path.append(str(Path(__file__).resolve().parents[2]))
 
 from app.data.fetcher import BinanceFetcher
 from app.data.storage import DataStorage
 from app.data.sentiment_fetcher import SentimentFetcher
 from app.data.onchain_fetcher import OnChainFetcher
-from app.strategy.ema_atr import EmaAtrStrategy
-from app.backtest.engine import BacktestEngine
-from app.optimize.optimizer import Optimizer
+from app.features.engineer import FeatureEngineer
+from app.model.train import ModelTrainer
+from app.model.monitor import DriftMonitor
 from app.live.broker import LiveBroker
 from app.live.notifier import Notifier
 
@@ -26,73 +26,68 @@ def cli():
     """Binance Bot Projesi - Orkestrasyon CLI"""
     pass
 
-@cli.command()
-@click.option('--symbol', default='BTCUSDT', help='Trading symbol.')
-@click.option('--interval', default='1h', help='Candlestick interval.')
-@click.option('--days', default=365, help='Number of days to fetch.')
-def update_data(symbol, interval, days):
+# --- Data Population Group ---
+@click.group(name='update')
+def update_group():
+    """Commands to update various data sources."""
+    pass
+
+@update_group.command(name='ohlcv')
+def update_ohlcv():
     """Fetches historical OHLCV data."""
-    click.echo(f"Fetching data for {symbol}...")
+    click.echo("Fetching OHLCV data...")
     fetcher = BinanceFetcher()
     storage = DataStorage()
-    end_date = datetime.utcnow()
-    start_date = end_date - timedelta(days=days)
-    df = fetcher.get_klines(symbol, interval, start_str=start_date.strftime('%Y-%m-%d'), end_str=end_date.strftime('%Y-%m-%d'))
+    df = fetcher.get_klines('BTCUSDT', '1h', "365 days ago UTC")
     if not df.empty:
-        storage.save_ohlcv(df, symbol, interval)
-        click.echo(f"Saved {len(df)} records.")
+        storage.save_ohlcv(df, 'BTCUSDT', '1h')
+    click.echo("OHLCV data updated.")
 
-@cli.command()
+@update_group.command(name='sentiment')
 def update_sentiment():
-    """Fetches news and updates the sentiment data feed."""
+    """Updates the sentiment data feed."""
     click.echo("Updating sentiment data...")
-    fetcher = SentimentFetcher()
-    fetcher.fetch_and_analyze()
-    click.echo("Sentiment data updated.")
+    SentimentFetcher().fetch_and_analyze()
 
-@cli.command()
+@update_group.command(name='onchain')
 def update_onchain():
-    """Generates and saves synthetic on-chain data."""
+    """Updates synthetic on-chain data."""
     click.echo("Updating on-chain data...")
-    fetcher = OnChainFetcher()
-    fetcher.generate_and_save_data()
-    click.echo("On-chain data updated.")
+    OnChainFetcher().generate_and_save_data()
 
-@cli.command()
-@click.option('--symbol', default='BTCUSDT', help='Symbol to backtest.')
-@click.option('--interval', default='1h', help='Interval to backtest.')
-@click.option('--fast-ema', default=12, help='Fast EMA period.')
-@click.option('--slow-ema', default=26, help='Slow EMA period.')
-def run_backtest(symbol, interval, fast_ema, slow_ema):
-    """Runs a single-asset backtest."""
-    storage = DataStorage()
-    df = storage.read_ohlcv(symbol, interval)
-    if df.empty:
-        click.echo("No data found.", err=True)
-        return
-    strategy = EmaAtrStrategy(fast_ema_period=fast_ema, slow_ema_period=slow_ema)
-    engine = BacktestEngine(df, strategy)
-    engine.run()
-    report_name = f"backtest_{symbol}_{interval}.txt"
-    engine.generate_report(report_filename=report_name)
-    click.echo(f"Backtest complete. Report: reports/{report_name}")
+# --- Model Lifecycle Group ---
+@click.group(name='model')
+def model_group():
+    """Commands for the AI model lifecycle."""
+    pass
 
-@cli.command()
-@click.option('--symbol', default='BTCUSDT', help='Symbol to optimize.')
-@click.option('--interval', default='1h', help='Interval to optimize.')
-@click.option('--trials', default=50, help='Number of optimization trials.')
-def run_optimization(symbol, interval, trials):
-    """Runs hyperparameter optimization."""
-    try:
-        optimizer = Optimizer(symbol, interval, "2023-01-01", "2023-12-31")
-        optimizer.run_optimization(n_trials=trials)
-        click.echo("Optimization complete.")
-    except ValueError as e:
-        click.echo(f"Error: {e}", err=True)
+@model_group.command(name='generate-features')
+def generate_features():
+    """Generates feature set for training."""
+    click.echo("Generating model features...")
+    FeatureEngineer().create_features()
 
+@model_group.command(name='train')
+def train_model():
+    """Trains a new ADE model and generates baseline stats."""
+    click.echo("Training new model...")
+    ModelTrainer().train_model()
+    DriftMonitor().generate_baseline_stats()
+    click.echo("Model training and baseline generation complete.")
+
+@model_group.command(name='monitor-drift')
+def monitor_drift():
+    """Checks for model drift."""
+    click.echo("Monitoring for model drift...")
+    features_df = pd.read_parquet("data/derived/model_features.parquet")
+    live_sample = features_df.tail(1000)
+    drift_report = DriftMonitor().check_for_drift(live_sample)
+    if drift_report:
+        click.echo("Drift detected!", err=True)
+
+# --- Live Bot Management ---
 @cli.command()
 def start_live():
-    """Starts the live trading bot as a background process."""
     if PID_FILE.exists():
         click.echo("Bot is already running.", err=True)
         return
@@ -103,7 +98,6 @@ def start_live():
 
 @cli.command()
 def stop_live():
-    """Stops the live trading bot."""
     if not PID_FILE.exists():
         click.echo("Bot not running.", err=True)
         return
@@ -115,20 +109,8 @@ def stop_live():
         click.echo(f"Process {pid} not found.", err=True)
     os.remove(PID_FILE)
 
-@cli.command()
-def daily_summary():
-    """Sends a daily portfolio summary."""
-    click.echo("Sending daily summary...")
-    try:
-        broker = LiveBroker(symbol='BTC/USDT') # Dummy symbol for init
-        balance = broker.get_portfolio_balance()
-        total_usdt = balance['total']['USDT']
-        message = f"*📈 Daily Portfolio Summary*\n\n*Total Value:* ${total_usdt:,.2f} USD"
-        notifier = Notifier()
-        asyncio.run(notifier.send_message(message))
-        click.echo("Summary sent.")
-    except Exception as e:
-        click.echo(f"Failed to send summary: {e}", err=True)
+cli.add_command(update_group)
+cli.add_command(model_group)
 
 if __name__ == '__main__':
     cli()
