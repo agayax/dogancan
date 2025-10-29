@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Strategy Marketplace</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <style>
+        /* Marketplace specific styles */
+        .marketplace-container { padding: 20px; }
+        .marketplace-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; }
+        .strategy-card { background-color: var(--panel-background); padding: 15px; border-radius: 8px; border: 1px solid var(--border-color); }
+        .strategy-card h4 { margin-top: 0; }
+        .strategy-card button { margin-top: 10px; background-color: #4caf50; } /* Green lease button */
+    </style>
+</head>
+<body>
+    <div class="marketplace-container">
+        <h1>Strategy Marketplace</h1>
+        <nav>
+            <a href="/">Home</a> | <a href="/workshop.html">Workshop</a> | <a href="/leaderboard.html">Leaderboard</a>
+        </nav>
+
+        <section>
+            <h2>Approved Strategies</h2>
+            <p>Lease a proven strategy to run directly on your account. The strategy's parameters are hidden, but its performance is verified.</p>
+            <div id="marketplace-list" class="marketplace-list">
+                <!-- Marketplace strategies will be dynamically inserted here -->
+            </div>
+        </section>
+    </div>
+
+    <script src="/static/marketplace.js"></script>
+</body>
+</html>

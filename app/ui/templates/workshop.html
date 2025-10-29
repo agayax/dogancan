@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Strategy Workshop</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <style>
+        /* Workshop specific styles */
+        .workshop-container { padding: 20px; }
+        .preset-form { margin-bottom: 30px; }
+        .preset-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; }
+        .preset-card { background-color: var(--panel-background); padding: 15px; border-radius: 8px; border: 1px solid var(--border-color); }
+        .preset-card h4 { margin-top: 0; }
+        .preset-card button { margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <div class="workshop-container">
+        <h1>Strategy Workshop</h1>
+        <nav>
+            <a href="/">Home</a> | <a href="/leaderboard.html">Leaderboard</a> | <a href="/marketplace.html">Marketplace</a>
+        </nav>
+
+        <section class="preset-form">
+            <h2>Create New Preset</h2>
+            <form id="create-preset-form">
+                <input type="text" id="preset-name" placeholder="Preset Name" required>
+                <textarea id="preset-description" placeholder="Description"></textarea>
+                <textarea id="preset-config" placeholder='{"strategy_name": "ema_atr", "params": {...}}' required></textarea>
+                <label>
+                    <input type="checkbox" id="preset-is-public"> Make Public
+                </label>
+                <button type="submit">Save Preset</button>
+            </form>
+        </section>
+
+        <section>
+            <h2>Public Presets</h2>
+            <div id="public-presets-list" class="preset-list">
+                <!-- Presets will be dynamically inserted here -->
+            </div>
+        </section>
+    </div>
+
+    <script src="/static/workshop.js"></script>
+</body>
+</html>

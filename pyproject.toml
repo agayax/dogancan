@@ -1,0 +1,38 @@
+[tool.poetry]
+name = "binance-bot-projesi"
+version = "0.1.0"
+description = "A multi-agent AI trading bot for Binance."
+authors = ["Jules"]
+
+[tool.poetry.dependencies]
+python = "^3.12"
+pandas = "^2.2.0"
+pyarrow = "^15.0.0"
+duckdb = "^0.9.2"
+fastapi = "^0.109.2"
+uvicorn = "^0.27.1"
+jinja2 = "^3.1.3"
+websockets = "^12.0"
+python-binance = "^1.0.19"
+python-dotenv = "^1.0.1"
+ccxt = "^4.1.72"
+optuna = "^3.5.0"
+click = "^8.1.7"
+openai = "^1.12.0"
+scikit-learn = "^1.4.1.post1"
+xgboost = "^2.0.3"
+scipy = "^1.12.0"
+pyyaml = "^6.0.1"
+feedparser = "^6.0.10"
+python-telegram-bot = "^21.0.1"
+sqlalchemy = "^2.0.27"
+passlib = {extras = ["bcrypt"], version = "^1.7.4"}
+python-jose = {extras = ["cryptography"], version = "^3.3.0"}
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0.0"
+playwright = "^1.41.2"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

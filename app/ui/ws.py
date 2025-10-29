@@ -4,6 +4,12 @@ import random
 from pathlib import Path
 import sys
 import pandas as pd
+
+# --- PYTHONPATH fix ---
+# Ensure the app's root directory is in the Python path.
+# This is a workaround for issues with how Uvicorn might be launched.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -11,9 +17,15 @@ from fastapi.templating import Jinja2Templates
 
 sys.path.append(str(Path(__file__).resolve().parents[2]))
 from app.data.storage import DataStorage
+from app.ui import auth, presets, leaderboard, marketplace # Import the new modules
 
 # --- App Setup ---
 app = FastAPI()
+app.include_router(auth.router, tags=["auth"])
+app.include_router(presets.router, prefix="/api", tags=["presets"])
+app.include_router(leaderboard.router, prefix="/api", tags=["leaderboard"])
+app.include_router(marketplace.router, prefix="/api", tags=["marketplace"]) # Include the marketplace routes
+
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
@@ -82,6 +94,17 @@ async def startup_event():
 @app.get("/", response_class=HTMLResponse)
 async def read_root(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
+
+@app.get("/{page_name}.html", response_class=HTMLResponse)
+async def read_page(request: Request, page_name: str):
+    """
+    Serves any .html file from the templates directory.
+    """
+    try:
+        return templates.TemplateResponse(f"{page_name}.html", {"request": request})
+    except Exception:
+        raise HTTPException(status_code=404, detail="Page not found")
+
 
 @app.get("/api/ohlcv/{symbol}/{interval}")
 async def get_ohlcv(symbol: str, interval: str):
