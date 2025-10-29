@@ -3,55 +3,35 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Binance Bot Projesi - 4D Chart</title>
+    <title>Jules.ai - Swarm Intelligence Trader</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head><body>
+    <div class="container">
+        <div class="left-panel">
+            <div class="panel">
+                <h3>Control Panel</h3>
+                <!-- Future controls for backtesting etc. -->
+            </div>
+            <div class="panel chat-panel">
+                <h3>Agent Debate Layer</h3>
+                <div class="chat-container">
+                    <div class="chat-messages" id="chat-messages">
+                        <div class="message bot">Welcome! Ask me about the current market outlook.</div>
+                    </div>
+                    <div class="chat-input">
+                        <input type="text" id="chat-input" placeholder="Ask the agents...">
+                        <button id="chat-send-btn">Send</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="main-content">
+            <div id="chart-container"></div>
+        </div>
+    </div>
+
     <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
-    <style>
-        /* ... (previous styles remain the same) ... */
-        body { font-family: sans-serif; background-color: #131722; color: #d1d4dc; margin: 0; display: flex; flex-direction: column; height: 100vh; }
-        .main-container { display: flex; flex-grow: 1; }
-        .chart-area { display: flex; flex-direction: column; flex-grow: 1; }
-        #chart-container { flex-grow: 3; position: relative; } /* Main chart takes more space */
-        #sub-chart-container { flex-grow: 1; border-top: 1px solid #2a2e39; } /* New sub-chart */
-        .left-panel { width: 300px; padding: 10px; background-color: #1e222d; }
-        /* ... (other panel styles) ... */
-    </style>
-</head>
-<body>
-
-<div class="main-container">
-    <div class="chart-area">
-        <div id="chart-container">
-            <!-- Portfolio status etc. -->
-        </div>
-        <div id="sub-chart-container"></div>
-    </div>
-    <div class="left-panel">
-        <!-- Strategy Panel -->
-        <div class="panel">
-            <h3>Strategy Parameters</h3>
-            <!-- ... (inputs for EMA, etc.) ... -->
-        </div>
-
-        <!-- NEW: Sub-Chart Control Panel -->
-        <div class="panel">
-            <h3>Macro Data</h3>
-            <select id="macro-data-select" style="width: 100%; padding: 8px;">
-                <option value="none" selected>None</option>
-                <option value="sentiment">News Sentiment</option>
-                <option value="onchain_btc_active">BTC Active Addresses</option>
-                <option value="onchain_eth_gas">ETH Avg Gas (Gwei)</option>
-            </select>
-        </div>
-
-        <!-- Order Panel -->
-        <div class="panel">
-            <h3>Order Panel</h3>
-            <!-- ... (deactivated order inputs) ... -->
-        </div>
-    </div>
-</div>
-
-<script src="/static/charts.js"></script>
-
+    <script src="/static/api.js"></script>
+    <script src="/static/charts.js"></script>
 </body>
 </html>

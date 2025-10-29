@@ -1,47 +1,57 @@
 import pandas as pd
 import xgboost as xgb
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_squared_error
+from sklearn.metrics import accuracy_score, mean_squared_error
 from pathlib import Path
+import sys
+sys.path.append(str(Path(__file__).resolve().parents[2]))
 
 class ModelTrainer:
     """
-    Trains an XGBoost model on the engineered features to predict future returns.
+    Trains specialized XGBoost persona models (e.g., Aggressive, Cautious)
+    on filtered datasets to achieve different objectives.
     """
     def __init__(self, features_path="data/derived/model_features.parquet", model_output_dir="models/"):
         self.features_path = Path(features_path)
-        self.model_output_dir = Path(model_output_dir)
-        self.model_output_dir.mkdir(parents=True, exist_ok=True)
-
-    def train_model(self):
-        """
-        Loads features, trains the model, and saves it to a file.
-        """
         if not self.features_path.exists():
             raise FileNotFoundError("Features file not found. Run the feature engineering job first.")
 
-        print("Loading features for model training...")
-        df = pd.read_parquet(self.features_path)
+        self.df = pd.read_parquet(self.features_path)
+        self.model_output_dir = Path(model_output_dir)
+        self.model_output_dir.mkdir(parents=True, exist_ok=True)
 
-        # --- Feature and Target Selection ---
-        features = [col for col in df.columns if col not in ['target_return_1h', 'timestamp']]
-        target = 'target_return_1h'
+    def train_persona(self, persona_config):
+        """
+        Trains a single persona model based on a configuration dictionary.
+        """
+        persona_name = persona_config['name']
+        print(f"--- Starting training for Persona: {persona_name} ---")
 
-        X = df[features]
-        y = df[target]
+        # 1. Filter data based on persona's regime
+        persona_df = self.df.query(persona_config['data_filter']).copy()
+        print(f"Filtered data for {persona_name}: {len(persona_df)} records remaining.")
 
-        # Split data into training and testing sets
+        if persona_df.empty:
+            print(f"Warning: No data available for persona '{persona_name}' after filtering. Skipping.")
+            return
+
+        # 2. Define Features and Target
+        features = [col for col in self.df.columns if col not in ['target', 'timestamp', 'volatility', 'avg_volatility', 'z_score_50', 'mean_reversion_signal', 'volatility_regime']]
+        target = 'target'
+
+        X = persona_df[features]
+        y = persona_df[target]
+
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
 
-        # --- Model Training (XGBoost) ---
-        print("Training XGBoost model...")
-        model = xgb.XGBRegressor(
-            objective='reg:squarederror',
-            n_estimators=1000,
-            learning_rate=0.05,
-            early_stopping_rounds=50,
-            eval_metric='rmse'
-        )
+        # 3. Train Model
+        print(f"Training {persona_config['model_type']} for {persona_name}...")
+        model_params = persona_config['model_params']
+
+        if persona_config['model_type'] == 'classifier':
+            model = xgb.XGBClassifier(**model_params)
+        else: # regressor
+            model = xgb.XGBRegressor(**model_params)
 
         model.fit(
             X_train, y_train,
@@ -49,21 +59,58 @@ class ModelTrainer:
             verbose=False
         )
 
-        # --- Evaluation ---
+        # 4. Evaluate
         preds = model.predict(X_test)
-        rmse = mean_squared_error(y_test, preds, squared=False)
-        print(f"Model training complete. Test RMSE: {rmse:.6f}")
+        if persona_config['model_type'] == 'classifier':
+            metric = accuracy_score(y_test, preds)
+            print(f"Evaluation complete. Test Accuracy: {metric:.4f}")
+        else:
+            metric = mean_squared_error(y_test, preds, squared=False)
+            print(f"Evaluation complete. Test RMSE: {metric:.6f}")
 
-        # --- Save Model ---
-        model_version = "v1" # This could be dynamic
-        model_path = self.model_output_dir / f"ade_xgb_{model_version}.bin"
+        # 5. Save Model
+        model_path = self.model_output_dir / persona_config['output_filename']
         model.save_model(model_path)
-        print(f"Model saved to {model_path}")
+        print(f"Persona model '{persona_name}' saved to {model_path}\n")
+
 
 if __name__ == '__main__':
+    # Define the configurations for each AI Persona
+
+    # Persona 1: "Agresif" (Grendel) - High volatility, profit maximization
+    grendel_config = {
+        "name": "Agent_Grendel",
+        "model_type": "regressor",
+        "data_filter": "volatility_regime == 1",
+        "output_filename": "ade_grendel_v1.bin",
+        "model_params": {
+            'objective': 'reg:squarederror',
+            'n_estimators': 1000,
+            'learning_rate': 0.05,
+            'early_stopping_rounds': 50,
+            'eval_metric': 'rmse'
+        }
+    }
+
+    # Persona 2: "Tedbirli" (Beowulf) - Mean reversion, risk minimization (predicting win/loss)
+    beowulf_config = {
+        "name": "Agent_Beowulf",
+        "model_type": "classifier",
+        "data_filter": "mean_reversion_signal != 0",
+        "output_filename": "ade_beowulf_v1.bin",
+        "model_params": {
+            'objective': 'binary:logistic',
+            'n_estimators': 500,
+            'learning_rate': 0.01,
+            'early_stopping_rounds': 50,
+            'eval_metric': 'logloss'
+        }
+    }
+
     try:
         trainer = ModelTrainer()
-        trainer.train_model()
+        trainer.train_persona(grendel_config)
+        trainer.train_persona(beowulf_config)
     except FileNotFoundError as e:
         print(f"Error: {e}")
         print("Please run the 'generate-features' job first.")

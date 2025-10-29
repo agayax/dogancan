@@ -1,85 +1,125 @@
+import asyncio
+import json
+import random
+from pathlib import Path
+import sys
 import pandas as pd
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from pathlib import Path
-import json
-import asyncio
-import sys
 
 sys.path.append(str(Path(__file__).resolve().parents[2]))
-
 from app.data.storage import DataStorage
-from app.strategy.ema_atr import EmaAtrStrategy
-from app.backtest.engine import BacktestEngine
-from app.services.llm import LLMService
 
-TRADES_LOG_FILE = Path(__file__).resolve().parents[2] / "trades_with_reasons.jsonl"
-SENTIMENT_FILE = Path(__file__).resolve().parents[2] / "data/derived/sentiment_feed.parquet"
-ONCHAIN_FILE = Path(__file__).resolve().parents[2] / "data/derived/onchain_daily.parquet"
-
+# --- App Setup ---
 app = FastAPI()
-static_path = Path(__file__).parent / "static"
-app.mount("/static", StaticFiles(directory=static_path), name="static")
-templates_path = Path(__file__).parent / "templates"
-templates = Jinja2Templates(directory=templates_path)
-llm_service = LLMService()
+BASE_DIR = Path(__file__).resolve().parent
+templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
+# --- In-memory Data & Services ---
+data_storage = DataStorage()
+
+# --- Connection Manager ---
 class ConnectionManager:
-    def __init__(self): self.active_connections: list[WebSocket] = []
-    async def connect(self, ws: WebSocket): await ws.accept(); self.active_connections.append(ws)
-    def disconnect(self, ws: WebSocket): self.active_connections.remove(ws)
-    async def broadcast(self, msg: str):
-        for conn in self.active_connections: await conn.send_text(msg)
+    def __init__(self):
+        self.active_connections: list[WebSocket] = []
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+
+    def disconnect(self, websocket: WebSocket):
+        self.active_connections.remove(websocket)
+
+    async def broadcast(self, message: str):
+        for connection in self.active_connections:
+            await connection.send_text(message)
+
 manager = ConnectionManager()
 
+# --- Background Task for Broadcasting Data ---
+async def broadcast_data():
+    """Simulates a live data feed for OHLCV and agent signals."""
+    last_price = 1.0
+    try:
+        df = data_storage.read_ohlcv('BTCUSDT', '1h')
+        last_price = df['close'].iloc[-1] if not df.empty else 60000
+    except Exception:
+        last_price = 60000
+
+    while True:
+        await asyncio.sleep(2) # Broadcast every 2 seconds
+
+        # 1. Simulate new OHLCV kline
+        new_price = last_price * (1 + random.uniform(-0.001, 0.001))
+        kline = {
+            "time": pd.Timestamp.utcnow().isoformat(),
+            "open": last_price, "high": max(last_price, new_price),
+            "low": min(last_price, new_price), "close": new_price
+        }
+        await manager.broadcast(json.dumps({"type": "ohlcv_update", "kline": kline}))
+        last_price = new_price
+
+        # 2. Simulate agent signals randomly
+        if random.random() < 0.1: # 10% chance of a signal
+            agent = random.choice(['Agent_Grendel', 'Agent_Beowulf'])
+            signal = random.choice(['buy', 'sell'])
+            signal_data = {
+                "type": "signal", "timestamp": kline['time'],
+                "agent": agent, "signal": signal, "price": new_price
+            }
+            await manager.broadcast(json.dumps(signal_data))
+
+
+@app.on_event("startup")
+async def startup_event():
+    # Start the background task
+    asyncio.create_task(broadcast_data())
+
+# --- HTTP Routes ---
 @app.get("/", response_class=HTMLResponse)
-async def read_root(request: Request): return templates.TemplateResponse("index.html", {"request": request})
+async def read_root(request: Request):
+    return templates.TemplateResponse("index.html", {"request": request})
 
-@app.get("/api/ohlcv")
-async def get_ohlcv_data(symbol: str = "BTCUSDT", interval: str = "1h", start_date: str = "2023-01-01", end_date: str = "2023-12-31"):
-    storage = DataStorage()
-    df = storage.read_ohlcv(symbol, interval, start_date, end_date)
-    if df.empty: return []
-    df.reset_index(inplace=True)
-    df['time'] = df['timestamp'].apply(lambda x: int(x.timestamp()))
-    return df[['time', 'open', 'high', 'low', 'close']].to_dict(orient='records')
+@app.get("/api/ohlcv/{symbol}/{interval}")
+async def get_ohlcv(symbol: str, interval: str):
+    try:
+        df = data_storage.read_ohlcv(symbol, interval)
+        # Convert timestamp to string for JSON compatibility
+        df.index = df.index.strftime('%Y-%m-%dT%H:%M:%SZ')
+        return df.to_dict(orient='records')
+    except Exception as e:
+        return {"error": str(e)}
 
-@app.get("/api/sentiment")
-async def get_sentiment_data():
-    if not SENTIMENT_FILE.exists(): return []
-    df = pd.read_parquet(SENTIMENT_FILE)
-    df.set_index('timestamp', inplace=True)
-    df_resampled = df['sentiment_score'].resample('h').mean().dropna().reset_index()
-    df_resampled.columns = ['time', 'value']
-    df_resampled['time'] = df_resampled['time'].apply(lambda x: int(x.timestamp()))
-    return df_resampled.to_dict(orient='records')
+# --- WebSocket Route ---
+@app.websocket("/ws/chat")
+async def websocket_endpoint(websocket: WebSocket):
+    await manager.connect(websocket)
+    try:
+        while True:
+            data = await websocket.receive_text()
+            message = json.loads(data)
 
-@app.get("/api/onchain")
-async def get_onchain_data(metric: str = "btc_active_addresses"):
-    if not ONCHAIN_FILE.exists(): return []
-    df = pd.read_parquet(ONCHAIN_FILE)
-    if metric not in df.columns: return []
-    df = df[['timestamp', metric]].copy()
-    df.columns = ['time', 'value']
-    df['time'] = df['time'].apply(lambda x: int(x.timestamp()))
-    return df.to_dict(orient='records')
+            if message.get("type") == "chat_message":
+                # Simulate agent debate
+                user_question = message.get("text", "")
 
-@app.get("/api/why_trade")
-async def why_trade(trade_id: str):
-    if not TRADES_LOG_FILE.exists(): raise HTTPException(404, "Log file not found.")
-    with open(TRADES_LOG_FILE, 'r') as f:
-        for line in f:
-            trade_log = json.loads(line)
-            if trade_log.get('trade_id') == trade_id:
-                explanation = llm_service.explain_trade_reason(trade_log.get('reason', {}))
-                return JSONResponse({"explanation": explanation, **trade_log})
-    raise HTTPException(404, f"Trade '{trade_id}' not found.")
+                # Grendel's (Aggressive) response
+                await asyncio.sleep(0.5)
+                grendel_response = f"Volatility is my playground. I see a clear momentum signal. We should go all in. Target: {last_price * 1.05:.0f}."
+                await manager.broadcast(json.dumps({
+                    "type": "chat_response", "sender": "Grendel",
+                    "text": grendel_response, "persona": "Agent_Grendel"
+                }))
 
-# WebSocket and other endpoints would remain here
-# ...
-
-if __name__ == '__main__':
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+                # Beowulf's (Cautious) response
+                await asyncio.sleep(1)
+                beowulf_response = f"Caution is advised. The Z-score is neutral, and sentiment is unstable. A defensive stance is prudent. Wait for confirmation."
+                await manager.broadcast(json.dumps({
+                    "type": "chat_response", "sender": "Beowulf",
+                    "text": beowulf_response, "persona": "Agent_Beowulf"
+                }))
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)

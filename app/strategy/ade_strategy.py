@@ -2,85 +2,58 @@ import pandas as pd
 import xgboost as xgb
 from pathlib import Path
 import sys
+
 sys.path.append(str(Path(__file__).resolve().parents[2]))
-from app.features.engineer import FeatureEngineer # Reuse for on-the-fly feature calculation
+from app.features.engineer import FeatureEngineer
 
 class ADEStrategy:
     """
-    An AI Decision Engine (ADE) strategy that uses a trained XGBoost model
-    to make trading decisions.
+    An AI Decision Engine (ADE) strategy that uses a trained XGBoost model.
+    It can be configured to represent different personas (e.g., Grendel, Beowulf)
+    by loading different model files.
     """
-    def __init__(self, model_path="models/ade_xgb_v1.bin", prediction_threshold=0.0005):
+    def __init__(self, model_path, threshold=0.55):
         self.model_path = Path(model_path)
         if not self.model_path.exists():
             raise FileNotFoundError(f"Trained model not found at {self.model_path}")
 
         self.model = xgb.Booster()
         self.model.load_model(self.model_path)
-        print(f"ADE Strategy loaded model from {self.model_path}")
+        print(f"ADE Strategy instance created. Loaded model from {self.model_path}")
 
         self.feature_engineer = FeatureEngineer()
-        self.prediction_threshold = prediction_threshold
+        self.threshold = threshold
 
-    def generate_signals(self, ohlcv_df, sentiment_df=None, onchain_df=None):
+    def generate_signals(self, data):
         """
-        Generates a trading signal based on the model's prediction.
+        Generates a target portfolio based on the model's prediction.
 
-        :param ohlcv_df: DataFrame of the latest OHLCV data.
-        :param sentiment_df: DataFrame of recent sentiment data.
-        :param onchain_df: DataFrame of recent on-chain data.
-        :return: A signal (1 for buy, -1 for sell, 0 for hold) and a reason dictionary.
+        :param data: A dictionary where keys are symbols and values are dataframes.
+        :return: A dictionary representing the target portfolio, e.g., {'BTCUSDT': 1.0}.
         """
-        # --- On-the-fly Feature Engineering ---
-        # This part needs to mirror the logic in FeatureEngineer but for a single, live data point.
-        # For simplicity in this implementation, we'll assume ohlcv_df contains enough history
-        # to calculate indicators. A more robust implementation would manage a history buffer here.
-
-        df = ohlcv_df.copy()
-
-        # Add technical indicators
-        df['RSI'] = self.feature_engineer._rsi(df['close'], 14)
-        df['SMA_50'] = df['close'].rolling(window=50).mean()
-        df['SMA_200'] = df['close'].rolling(window=200).mean()
-        df['returns'] = df['close'].pct_change()
-
-        # Add sentiment/onchain if available (simplified for this example)
-        if sentiment_df is not None and not sentiment_df.empty:
-            df['sentiment_score'] = sentiment_df['sentiment_score'].iloc[-1]
-        else:
-            df['sentiment_score'] = 0
-
-        if onchain_df is not None and not onchain_df.empty:
-            df['btc_active_addresses'] = onchain_df['btc_active_addresses'].iloc[-1]
-        else:
-            df['btc_active_addresses'] = 0
-
-        df.dropna(inplace=True)
+        symbol = list(data.keys())[0]
+        df = data[symbol].copy()
 
         if df.empty:
-            return 0, {}
+            return {}
 
-        # --- Prediction ---
-        last_features = df.tail(1)
+        # 1. On-the-fly Feature Engineering
+        features_df = self.feature_engineer._generate_technical_indicators(df)
+        features_df.dropna(inplace=True)
+
+        if features_df.empty:
+            return {}
+
+        # 2. Prediction
         feature_names = self.model.feature_names
-
-        # Ensure correct column order
-        dmatrix = xgb.DMatrix(last_features[feature_names])
+        dmatrix = xgb.DMatrix(features_df[feature_names].tail(1))
         prediction = self.model.predict(dmatrix)[0]
 
-        # --- Signal Generation ---
-        signal = 0
-        if prediction > self.prediction_threshold:
-            signal = 1  # Buy signal
-        elif prediction < -self.prediction_threshold:
-            signal = -1 # Sell signal
+        # 3. Signal to Target Portfolio
+        # This is a simple binary decision based on the threshold
+        target_weight = 1.0 if prediction > self.threshold else 0.0
 
-        reason = {
-            'model_prediction': float(prediction),
-            'prediction_threshold': self.prediction_threshold,
-            'signal_generated': signal
-        }
+        return {symbol: target_weight}
 
-        # This is a simplified signal generation. For portfolio strategies,
-        # this would return target weights instead.
-        return signal, reason
+if __name__ == '__main__':
+    print("ADEStrategy class defined. This module is intended to be imported.")

@@ -1,55 +1,114 @@
-// --- Chart Setup ---
-const chartContainer = document.getElementById('chart-container');
-const subChartContainer = document.getElementById('sub-chart-container');
+document.addEventListener('DOMContentLoaded', () => {
+    // --- Chart Setup ---
+    const chartContainer = document.getElementById('chart-container');
+    const chart = LightweightCharts.createChart(chartContainer, {
+        width: chartContainer.clientWidth,
+        height: chartContainer.clientHeight,
+        layout: {
+            backgroundColor: '#1e1e1e',
+            textColor: '#e0e0e0',
+        },
+        grid: {
+            vertLines: { color: '#2a2e39' },
+            horzLines: { color: '#2a2e39' },
+        },
+        timeScale: {
+            borderColor: '#2a2e39',
+        },
+    });
+    const candlestickSeries = chart.addCandlestickSeries();
 
-const chart = LightweightCharts.createChart(chartContainer, { width: chartContainer.clientWidth, height: chartContainer.clientHeight, layout: { backgroundColor: '#131722', textColor: '#d1d4dc' }, grid: { vertLines: { color: '#2a2e39' }, horzLines: { color: '#2a2e39' } }, timeScale: { timeVisible: true, secondsVisible: false } });
-const subChart = LightweightCharts.createChart(subChartContainer, { width: subChartContainer.clientWidth, height: subChartContainer.clientHeight, layout: { backgroundColor: '#131722', textColor: '#d1d4dc' }, grid: { vertLines: { color: '#2a2e39' }, horzLines: { color: '#2a2e39' } }, timeScale: { timeVisible: true, secondsVisible: false } });
+    // --- Agent Signal Markers ---
+    let grendelMarkers = [];
+    let beowulfMarkers = [];
 
-const candleSeries = chart.addCandlestickSeries({ upColor: '#26a69a', downColor: '#ef5350', borderDownColor: '#ef5350', borderUpColor: '#26a69a', wickDownColor: '#ef5350', wickUpColor: '#26a69a' });
-const subChartSeries = subChart.addHistogramSeries({ color: '#2962FF', base: 0 });
+    // --- Chat UI Elements ---
+    const chatMessages = document.getElementById('chat-messages');
+    const chatInput = document.getElementById('chat-input');
+    const chatSendBtn = document.getElementById('chat-send-btn');
 
-// --- Time Scale Sync ---
-chart.timeScale().subscribeVisibleTimeRangeChange(timeRange => { subChart.timeScale().setVisibleRange(timeRange); });
-subChart.timeScale().subscribeVisibleTimeRangeChange(timeRange => { chart.timeScale().setVisibleRange(timeRange); });
+    // --- WebSocket Connection ---
+    const chatSocket = new WebSocket(`ws://${window.location.host}/ws/chat`);
 
-// --- DOM Elements ---
-const macroSelect = document.getElementById('macro-data-select');
-const runBacktestBtn = document.getElementById('run-backtest-btn'); // Assuming this exists
+    chatSocket.onopen = () => {
+        console.log("WebSocket connection established.");
+        // You can fetch initial data here if needed
+    };
 
-// --- Data Loading ---
-async function loadInitialData() {
-    const ohlcvResponse = await fetch('/api/ohlcv');
-    const ohlcvData = await ohlcvResponse.json();
-    candleSeries.setData(ohlcvData);
-    // You might want to pre-load a default macro view, e.g., sentiment
-    await loadMacroData('sentiment');
-}
+    chatSocket.onmessage = (event) => {
+        const data = JSON.parse(event.data);
 
-async function loadMacroData(dataType) {
-    let url = '';
-    subChartSeries.setData([]);
-    if (dataType === 'none') return;
+        if (data.type === 'chat_response') {
+            addChatMessage(data.sender, data.text, data.persona);
+        } else if (data.type === 'signal') {
+            handleSignalMessage(data);
+        } else if (data.type === 'ohlcv_update') {
+            candlestickSeries.update(data.kline);
+        }
+    };
 
-    switch (dataType) {
-        case 'sentiment': url = '/api/sentiment'; break;
-        case 'onchain_btc_active': url = '/api/onchain?metric=btc_active_addresses'; break;
-        case 'onchain_eth_gas': url = '/api/onchain?metric=eth_avg_gas_gwei'; break;
+    chatSocket.onclose = () => {
+        console.log("WebSocket connection closed.");
+        addChatMessage('System', 'Connection to server lost.', 'system');
+    };
+
+    // --- UI Event Handlers ---
+    const sendChatMessage = () => {
+        const message = chatInput.value;
+        if (message.trim() !== '') {
+            chatSocket.send(JSON.stringify({ type: 'chat_message', text: message }));
+            addChatMessage('You', message, 'user');
+            chatInput.value = '';
+        }
+    };
+
+    chatSendBtn.addEventListener('click', sendChatMessage);
+    chatInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            sendChatMessage();
+        }
+    });
+
+    // --- Helper Functions ---
+    function addChatMessage(sender, text, persona = 'bot') {
+        const messageEl = document.createElement('div');
+        messageEl.classList.add('message', persona);
+
+        // Add persona class for styling
+        if (persona === 'Agent_Grendel') {
+            messageEl.classList.add('agent-grendel');
+        } else if (persona === 'Agent_Beowulf') {
+            messageEl.classList.add('agent-beowulf');
+        }
+
+        messageEl.innerHTML = `<strong>[${sender}]:</strong> ${text}`;
+        chatMessages.appendChild(messageEl);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
     }
-    const response = await fetch(url);
-    const data = await response.json();
-    subChartSeries.setData(data);
-}
 
-// --- Event Listeners ---
-macroSelect.addEventListener('change', (event) => loadMacroData(event.target.value));
+    function handleSignalMessage(data) {
+        const { timestamp, agent, signal, price } = data;
+        const marker = {
+            time: timestamp,
+            position: signal === 'buy' ? 'belowBar' : 'aboveBar',
+            color: agent === 'Agent_Grendel' ? '#e91e63' : '#2196f3', // Grendel: Pink, Beowulf: Blue
+            shape: signal === 'buy' ? 'arrowUp' : 'arrowDown',
+            text: agent.split('_')[1][0] // 'G' or 'B'
+        };
 
-// ... (Resize logic)
-window.addEventListener('resize', () => {
-    chart.resize(chartContainer.clientWidth, chartContainer.clientHeight);
-    subChart.resize(subChartContainer.clientWidth, subChartContainer.clientHeight);
+        if (agent === 'Agent_Grendel') {
+            grendelMarkers.push(marker);
+            candlestickSeries.setMarkers(grendelMarkers.concat(beowulfMarkers));
+        } else if (agent === 'Agent_Beowulf') {
+            beowulfMarkers.push(marker);
+            candlestickSeries.setMarkers(grendelMarkers.concat(beowulfMarkers));
+        }
+    }
+
+    // Load initial data
+    fetch('/api/ohlcv/BTCUSDT/1h')
+        .then(response => response.json())
+        .then(data => {
+            candlestickSeries.setData(data);
+        });
 });
-
-// ... (WebSocket and Backtest logic from previous sprints remains here)
-// Make sure to adapt it if necessary
-
-document.addEventListener('DOMContentLoaded', loadInitialData);
