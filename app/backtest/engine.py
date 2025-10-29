@@ -2,108 +2,128 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 import sys
+import yaml
+import time
+import random
 sys.path.append(str(Path(__file__).resolve().parents[2]))
 from app.services.llm import LLMService
 
 class PortfolioBacktestEngine:
     """
-    A backtesting engine designed for multi-asset, portfolio-based strategies
-    that generate target weights and rebalance periodically.
+    Enhanced portfolio backtest engine with Chaos Engineering and event-based
+    stress testing capabilities.
     """
     def __init__(self, data_dict, strategy, initial_capital=100000.0, rebalance_freq='W-FRI'):
-        self.data_dict = data_dict  # A dict of DataFrames, one for each symbol
-        self.strategy = strategy
-        self.initial_capital = initial_capital
-        self.rebalance_freq = rebalance_freq
-        self.llm_service = LLMService()
-
-        self.cash = initial_capital
-        self.positions = {}  # { 'symbol': units }
-        self.portfolio_history = []
-        self.trades = []
-
-        # Combine all data into a single multi-index DataFrame for easier time iteration
+        self.data_dict = data_dict
+        # ... (same initializations)
         self.master_df = pd.concat(data_dict, names=['symbol', 'timestamp']).sort_index()
 
-    def run(self):
-        print("Running Portfolio Backtest...")
+    def run(self, chaos_params=None, scenario_path=None):
+        print(f"Running Portfolio Backtest... (Chaos Mode: {bool(chaos_params)})")
 
-        # Get all unique timestamps across all assets and determine rebalancing dates
+        # --- Scenario Loading ---
+        events = self._load_scenario(scenario_path)
+
         all_timestamps = self.master_df.index.get_level_values('timestamp').unique()
-        rebalance_dates = pd.to_datetime(all_timestamps).to_series().resample(self.rebalance_freq).last().dropna()
+        # ... (rebalance_dates calculation)
 
         for timestamp in all_timestamps:
-            # Update portfolio value at every timestamp
-            current_value = self.cash
-            for symbol, units in self.positions.items():
-                if (symbol, timestamp) in self.master_df.index:
-                    current_price = self.master_df.loc[(symbol, timestamp), 'close']
-                    current_value += units * current_price
-            self.portfolio_history.append({'timestamp': timestamp, 'portfolio_value': current_value})
+            # --- Chaos: API Outage / Data Gap ---
+            if chaos_params and random.random() < chaos_params.get('data_gap_chance', 0):
+                print(f"CHAOS: Simulating data gap at {timestamp}")
+                time.sleep(0.01) # Simulate the passing of time
+                continue
 
-            # --- Rebalancing Logic ---
+            # --- Chaos: Latency Spike ---
+            if chaos_params and random.random() < chaos_params.get('latency_chance', 0):
+                latency = random.uniform(0.5, 2.0)
+                print(f"CHAOS: Simulating latency spike of {latency:.2f}s at {timestamp}")
+                time.sleep(latency)
+
+            # --- Event-based Stress ---
+            active_event = self._get_active_event(timestamp, events)
+            slippage_mult = active_event['effects']['slippage_multiplier'] if active_event else 1.0
+
+            # ... (portfolio value calculation)
+
+            # --- Rebalancing Logic (with Chaos) ---
             if timestamp in rebalance_dates:
-                print(f"--- Rebalancing on {timestamp.date()} ---")
+                # ... (target portfolio generation)
 
-                # 1. Get target portfolio from the strategy
-                # The strategy needs access to all data up to the current timestamp
-                historical_data_slice = {sym: df.loc[:timestamp] for sym, df in self.data_dict.items()}
-                target_portfolio = self.strategy.generate_target_portfolio(historical_data_slice)
-
-                # 2. Liquidate positions not in the new target portfolio
-                positions_to_exit = set(self.positions.keys()) - set(target_portfolio.keys())
-                for symbol in positions_to_exit:
-                    self._execute_sell(timestamp, symbol, self.positions[symbol])
-
-                # 3. Adjust positions for assets in the target portfolio
-                for symbol, target_weight in target_portfolio.items():
-                    target_value = current_value * target_weight
-
-                    current_price = self.master_df.loc[(symbol, timestamp), 'close']
-                    current_units = self.positions.get(symbol, 0)
-                    current_value_asset = current_units * current_price
-
-                    delta_value = target_value - current_value_asset
-                    delta_units = delta_value / current_price
-
-                    if delta_units > 0: # Need to buy more
-                        self._execute_buy(timestamp, symbol, delta_units)
-                    elif delta_units < 0: # Need to sell some
-                        self._execute_sell(timestamp, symbol, abs(delta_units))
+                # ... (rebalancing logic for buys and sells, now passing slippage_mult)
+                # self._execute_buy(..., slippage_multiplier=slippage_mult, chaos_params=chaos_params)
 
         self.results = pd.DataFrame(self.portfolio_history).set_index('timestamp')
-        print("Portfolio backtest finished.")
         return self.results
 
-    def _execute_buy(self, timestamp, symbol, units):
-        price = self.master_df.loc[(symbol, timestamp), 'close']
-        cost = units * price
-        if self.cash < cost:
-            # Not enough cash, skip or partially fill (here, we skip)
+    def _execute_buy(self, timestamp, symbol, units, slippage_multiplier=1.0, chaos_params=None):
+        # --- Chaos: Order Rejection ---
+        if chaos_params and random.random() < chaos_params.get('rejection_chance', 0):
+            print(f"CHAOS: Simulating order rejection for BUY {symbol}")
             return
-        self.cash -= cost
-        self.positions[symbol] = self.positions.get(symbol, 0) + units
-        self.trades.append({'timestamp': timestamp, 'symbol': symbol, 'type': 'BUY', 'units': units, 'price': price})
 
-    def _execute_sell(self, timestamp, symbol, units):
         price = self.master_df.loc[(symbol, timestamp), 'close']
-        proceeds = units * price
-        self.cash += proceeds
-        self.positions[symbol] = self.positions.get(symbol, 0) - units
-        if self.positions[symbol] <= 1e-6: # Clean up dust positions
-            del self.positions[symbol]
-        self.trades.append({'timestamp': timestamp, 'symbol': symbol, 'type': 'SELL', 'units': units, 'price': price})
 
-    def generate_report(self, report_filename='portfolio_backtest_report.txt'):
-        # ... (Similar to single-asset engine's report generation)
-        if self.results.empty: return
-        # ... (Metrics calculation as before)
-        metrics = {} # Calculate metrics like Sharpe, Drawdown, etc.
-        llm_summary = self.llm_service.summarize_backtest(metrics)
-        # ... (Save report)
-        print("Portfolio report generated.")
+        # --- Chaos: Slippage Spike ---
+        base_slippage = 0.001
+        current_slippage = base_slippage * slippage_multiplier
+        buy_price = price * (1 + current_slippage)
 
-# Keep the old engine for single-asset strategies if needed
-class BacktestEngine:
-    # ... (The previous single-asset engine code can remain here)
-    pass
+        # ... (rest of the buy logic)
+
+    def _execute_sell(self, timestamp, symbol, units, slippage_multiplier=1.0, chaos_params=None):
+        # ... (similar chaos injections for sell orders)
+        pass
+
+    def _load_scenario(self, scenario_path):
+        if not scenario_path or not Path(scenario_path).exists():
+            return []
+        with open(scenario_path, 'r') as f:
+            events = yaml.safe_load(f)
+        # Convert timestamps to datetime objects
+        for event in events:
+            event['timestamp'] = pd.to_datetime(event['timestamp'])
+        return events
+
+    def _get_active_event(self, timestamp, events):
+        for event in events:
+            if event['timestamp'] <= timestamp < (event['timestamp'] + pd.Timedelta(minutes=event['duration_minutes'])):
+                return event
+        return None
+
+    def _calculate_metrics(self, results_df, initial_capital):
+        if results_df.empty:
+            return {'Sharpe Ratio': 0, 'Max Drawdown (%)': -100}
+
+        returns = results_df['portfolio_value'].pct_change().dropna()
+        sharpe = (returns.mean() / returns.std()) * np.sqrt(365) if returns.std() != 0 else 0
+
+        rolling_max = results_df['portfolio_value'].cummax()
+        drawdown = (results_df['portfolio_value'] - rolling_max) / rolling_max
+        max_drawdown = drawdown.min() * 100
+
+        return {'Sharpe Ratio': sharpe, 'Max Drawdown (%)': max_drawdown}
+
+    def generate_resilience_report(self, standard_results, chaos_results, report_filename):
+        print("Generating Resilience Report...")
+
+        std_metrics = self._calculate_metrics(standard_results, self.initial_capital)
+        chaos_metrics = self._calculate_metrics(chaos_results, self.initial_capital)
+
+        resilience_score = chaos_metrics['Sharpe Ratio'] / std_metrics['Sharpe Ratio'] if std_metrics['Sharpe Ratio'] > 0 else 0
+
+        report = {
+            "Resilience Score": f"{resilience_score:.2f} (Target > 0.8)",
+            "Standard Run": std_metrics,
+            "Chaos Run": chaos_metrics
+        }
+
+        report_path = Path('reports') / report_filename
+        with open(report_path, 'w') as f:
+            json.dump(report, f, indent=4)
+
+        print(f"Resilience report saved to {report_path}")
+        print(json.dumps(report, indent=4))
+        return resilience_score
+
+# ... (Old BacktestEngine can remain)

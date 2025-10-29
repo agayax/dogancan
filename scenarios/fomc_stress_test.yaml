@@ -1,0 +1,13 @@
+- event_name: "FOMC Interest Rate Decision"
+  timestamp: "2023-06-14T18:00:00Z" # Use a historical date that exists in our data
+  duration_minutes: 15
+  effects:
+    slippage_multiplier: 10.0 # Increase slippage by 10x
+    volatility_multiplier: 5.0 # This would be used by a more advanced model/strategy
+
+- event_name: "Crypto Market Flash Crash"
+  timestamp: "2023-08-17T21:30:00Z" # Another historical event
+  duration_minutes: 5
+  effects:
+    slippage_multiplier: 20.0
+    # In a real scenario, you might inject specific price drops here
