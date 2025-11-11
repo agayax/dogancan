@@ -53,6 +53,19 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     // --- UI Event Handlers ---
+
+    // Minimalism Mode Toggle
+    const minimalismBtn = document.getElementById('minimalism-toggle-btn');
+    const leftPanel = document.querySelector('.left-panel'); // Target the whole left panel for simplicity
+
+    minimalismBtn.addEventListener('click', () => {
+        leftPanel.classList.toggle('hidden');
+        // Resize the chart to fit the new container size
+        setTimeout(() => {
+            chart.resize(chartContainer.clientWidth, chartContainer.clientHeight);
+        }, 50); // A small delay to allow CSS transition to start
+    });
+
     const sendChatMessage = () => {
         const message = chatInput.value;
         if (message.trim() !== '') {

@@ -111,3 +111,8 @@ body {
     border-radius: 20px;
     cursor: pointer;
 }
+
+/* Utility class for minimalism mode */
+.hidden {
+    display: none !important;
+}

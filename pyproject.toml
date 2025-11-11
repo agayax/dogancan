@@ -25,9 +25,7 @@ scipy = "^1.12.0"
 pyyaml = "^6.0.1"
 feedparser = "^6.0.10"
 python-telegram-bot = "^21.0.1"
-sqlalchemy = "^2.0.27"
-passlib = {extras = ["bcrypt"], version = "^1.7.4"}
-python-jose = {extras = ["cryptography"], version = "^3.3.0"}
+qiskit = "^1.0.2"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0.0"
